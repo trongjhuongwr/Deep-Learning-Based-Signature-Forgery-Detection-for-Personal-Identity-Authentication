@@ -12,6 +12,7 @@ from sklearn.metrics import (
     f1_score, roc_curve, auc, precision_recall_curve, confusion_matrix
 )
 from losses.triplet_loss import DistanceNet
+from dataloader.meta_dataloader import SignatureEpisodeDataset
 
 # Function to calculate distance based on selected metric
 def calculate_distance(anchor_feat, test_feat, metric='euclidean', device='cuda'):
@@ -258,3 +259,51 @@ def draw_far_frr(results):
     plt.legend()
     plt.grid(True)
     plt.show()
+
+def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, transform, k_shot, device):
+    feature_extractor.eval()
+    metric_generator.eval()
+    
+    test_dataset = SignatureEpisodeDataset(test_split_path, 'meta-test', k_shot=k_shot, n_query_genuine=5, n_query_forgery=5, transform=transform)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    
+    total_accuracy = 0.0
+    
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc="Evaluating on meta-test set"):
+            # Get data and transfer to GPU
+            support_images = batch['support_images'].squeeze(0).to(device)
+            query_images = batch['query_images'].squeeze(0).to(device)
+            query_labels = batch['query_labels'].squeeze(0).to(device)
+
+            # Extract embeddings
+            all_images = torch.cat([support_images, query_images], dim=0)
+            all_embeddings = feature_extractor(all_images)
+            support_embeddings = all_embeddings[:k_shot]
+            query_embeddings = all_embeddings[k_shot:]
+
+            # Generate metric
+            gen_module = metric_generator.module if isinstance(metric_generator, nn.DataParallel) else metric_generator
+            W = gen_module(support_embeddings)
+
+            # Evaluation: Calculate the distance from each query image to the user's prototype
+            prototype = torch.mean(support_embeddings, dim=0)
+            distances = []
+            for q_embed in query_embeddings:
+                diff = q_embed - prototype
+                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
+                distances.append(dist)
+            
+            # Find the best threshold for this user
+            distances = np.array(distances)
+            labels = query_labels.cpu().numpy()
+            
+            # Simple: the threshold is the average distance between the real and fake samples
+            threshold = (np.mean(distances[labels==1]) + np.mean(distances[labels==0])) / 2.0
+            
+            predictions = (distances < threshold).astype(int)
+            accuracy = np.mean(predictions == labels)
+            total_accuracy += accuracy
+
+    avg_accuracy = total_accuracy / len(test_loader)
+    return avg_accuracy

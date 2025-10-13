@@ -72,6 +72,26 @@ class TripletLoss(torch.nn.Module):
         return torch.mean(losses)
 
 
+def adaptive_mahalanobis_triplet_loss(anchor_feat, positive_feat, negative_feat, W, margin=0.5):
+    """
+    Calculate Triplet Loss using adaptive Mahalanobis distance.
+    d(x1, x2) = (x1-x2)^T * W * (x1-x2)
+    """
+    # Anchor-Positive Distance
+    diff_p = anchor_feat - positive_feat
+    dist_ap = torch.diag(torch.matmul(torch.matmul(diff_p, W), diff_p.t()))
+
+    # Anchor-Negative Distance
+    diff_n = anchor_feat - negative_feat
+    dist_an = torch.diag(torch.matmul(torch.matmul(diff_n, W), diff_n.t()))
+
+    # Calculate Triplet Loss
+    losses = F.relu(dist_ap - dist_an + margin)
+
+    # Add a small loss so W doesn't become a zero matrix (regularization)
+    matrix_reg_loss = torch.norm(W, p=1) * 1e-4
+
+    return torch.mean(losses) + matrix_reg_loss
     
 
     
