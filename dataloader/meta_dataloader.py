@@ -3,6 +3,17 @@ from torch.utils.data import Dataset
 import random
 import json
 from PIL import Image
+import os
+
+def _correct_path(path):
+    """
+    Chuyển đổi đường dẫn từ định dạng Windows trong file JSON
+    sang định dạng đúng của môi trường Kaggle.
+    """
+    # Thay thế phần đầu của đường dẫn Windows bằng đường dẫn Kaggle
+    # và thay thế dấu gạch chéo ngược
+    path = path.replace("C:\\Users\\USER\\.cache\\kagglehub\\datasets\\shreelakshmigp\\cedardataset\\versions\\1", "/kaggle/input/cedardataset")
+    return path.replace("\\", "/")
 
 class SignatureEpisodeDataset(Dataset):
     def __init__(self, split_file_path, split_name, k_shot=5, n_query_genuine=5, n_query_forgery=5, transform=None):
@@ -32,8 +43,9 @@ class SignatureEpisodeDataset(Dataset):
         user_id = self.user_ids[index]
         user_data = self.data[user_id]
 
-        genuine_paths = user_data['genuine']
-        forgery_paths = user_data['forgery']
+        # Sửa đường dẫn ngay khi đọc từ JSON
+        genuine_paths = [_correct_path(p) for p in user_data['genuine']]
+        forgery_paths = [_correct_path(p) for p in user_data['forgery']]
 
         if len(genuine_paths) < self.k_shot + self.n_query_genuine:
             raise ValueError(f"User {user_id} does not have enough genuine samples. Needs {self.k_shot + self.n_query_genuine}, has {len(genuine_paths)}.")
