@@ -294,11 +294,11 @@ def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, tr
                 dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
                 distances.append(dist)
             
-            # Find the best threshold for this user
+            # Find the best threshold for this user.
             distances = np.array(distances)
             labels = query_labels.cpu().numpy()
             
-            # Simple: the threshold is the average distance between the real and fake samples
+            # Simple: the threshold is the average distance between the real and fake samples.
             threshold = (np.mean(distances[labels==1]) + np.mean(distances[labels==0])) / 2.0
             
             predictions = (distances < threshold).astype(int)
