@@ -3,15 +3,14 @@ from torch.utils.data import Dataset
 import random
 import json
 from PIL import Image
-import os
+from torchvision import transforms
 
 def _correct_path(path):
     """
-    Chuyển đổi đường dẫn từ định dạng Windows trong file JSON
-    sang định dạng đúng của môi trường Kaggle.
+    Convert the path from Windows format in the JSON file
+    to the correct format of the Kaggle environment.
     """
-    # Thay thế phần đầu của đường dẫn Windows bằng đường dẫn Kaggle
-    # và thay thế dấu gạch chéo ngược
+    # Replace the first part of the Windows path with the Kaggle path and replace the backslashes
     path = path.replace("C:\\Users\\USER\\.cache\\kagglehub\\datasets\\shreelakshmigp\\cedardataset\\versions\\1", "/kaggle/input/cedardataset")
     return path.replace("\\", "/")
 
@@ -33,7 +32,25 @@ class SignatureEpisodeDataset(Dataset):
         self.k_shot = k_shot
         self.n_query_genuine = n_query_genuine
         self.n_query_forgery = n_query_forgery
-        self.transform = transform
+        
+        # Split transform into 2 sets: base and augment
+        self.base_transform = transforms.Compose([
+            transforms.Resize((220, 150)),
+            transforms.Grayscale(),
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+
+        self.augment_transform = transforms.Compose([
+            transforms.Resize((220, 150)),
+            transforms.Grayscale(),
+            transforms.RandomAffine(degrees=5, translate=(0.05, 0.05), scale=(0.95, 1.05)), # Thêm augmentation
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+
         self.length = len(self.user_ids)
 
     def __len__(self):
@@ -43,7 +60,6 @@ class SignatureEpisodeDataset(Dataset):
         user_id = self.user_ids[index]
         user_data = self.data[user_id]
 
-        # Sửa đường dẫn ngay khi đọc từ JSON
         genuine_paths = [_correct_path(p) for p in user_data['genuine']]
         forgery_paths = [_correct_path(p) for p in user_data['forgery']]
 
@@ -63,21 +79,23 @@ class SignatureEpisodeDataset(Dataset):
         query_forgery_paths = forgery_paths[:self.n_query_forgery]
         query_paths = query_genuine_paths + query_forgery_paths
 
-        # Create labels: 1 for genuine, 0 for forgery
+        support_labels = [1] * len(support_paths)
         query_labels = [1] * len(query_genuine_paths) + [0] * len(query_forgery_paths)
 
         # Helper function to load and transform images
-        def _load_images(paths):
+        def _load_images(paths, transform_func):
             images = [Image.open(p).convert('L') for p in paths]
-            if self.transform:
-                images = [self.transform(img) for img in images]
+            images = [transform_func(img) for img in images]
             return torch.stack(images)
 
-        support_images = _load_images(support_paths)
-        query_images = _load_images(query_paths)
+        # Support set uses basic transform 
+        support_images = _load_images(support_paths, self.base_transform) 
+        # Query set uses transform with augmentation
+        query_images = _load_images(query_paths, self.augment_transform)
 
         return {
             'support_images': support_images,
+            'support_labels': torch.tensor(support_labels),
             'query_images': query_images,
             'query_labels': torch.tensor(query_labels),
             'user_id': user_id
