@@ -261,48 +261,63 @@ def draw_far_frr(results):
     plt.grid(True)
     plt.show()
 
-def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, transform, k_shot, device):
+# utils/model_evaluation.py
+def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, transform, k_shot, device): # Thêm base_data_dir
     feature_extractor.eval()
     metric_generator.eval()
-    
-    test_dataset = SignatureEpisodeDataset(test_split_path, 'meta-test', k_shot=k_shot, n_query_genuine=5, n_query_forgery=5, transform=transform)
+
+    # Tạo test dataset với số lượng query nhiều hơn để đánh giá chính xác hơn
+    test_dataset = SignatureEpisodeDataset(
+        test_split_path, 
+        base_data_dir=base_data_dir, # Thêm tham số này
+        split_name='meta-test', 
+        k_shot=k_shot, 
+        n_query_genuine=10, 
+        n_query_forgery=10,
+        transform=transform
+    )
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-    
+
     total_accuracy = 0.0
-    
+
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Evaluating on meta-test set"):
-            # Get data and transfer to GPU
+        for batch in tqdm(test_loader, desc="Evaluating on meta-test set (Optimized)"):
             support_images = batch['support_images'].squeeze(0).to(device)
             query_images = batch['query_images'].squeeze(0).to(device)
             query_labels = batch['query_labels'].squeeze(0).to(device)
 
-            # Extract embeddings
+            # ... (Phần trích xuất embedding và sinh W giữ nguyên) ...
             all_images = torch.cat([support_images, query_images], dim=0)
             all_embeddings = feature_extractor(all_images)
             support_embeddings = all_embeddings[:k_shot]
             query_embeddings = all_embeddings[k_shot:]
 
-            # Generate metric
             gen_module = metric_generator.module if isinstance(metric_generator, nn.DataParallel) else metric_generator
             W = gen_module(support_embeddings)
 
-            # Evaluation: Calculate the distance from each query image to the user's prototype
             prototype = torch.mean(support_embeddings, dim=0)
-            distances = []
+
+            # --- LOGIC MỚI: TÌM NGƯỠNG TỐI ƯU TỪ SUPPORT SET ---
+            support_distances = []
+            for s_embed in support_embeddings:
+                diff = s_embed - prototype
+                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
+                support_distances.append(dist)
+
+            # Ngưỡng tối ưu có thể là khoảng cách lớn nhất trong support set + một sai số nhỏ
+            optimal_threshold = np.max(support_distances) * 1.1 # Thử nhân với 1.1 để nới lỏng ngưỡng
+
+            # --- ÁP DỤNG NGƯỠNG LÊN QUERY SET ---
+            query_distances = []
             for q_embed in query_embeddings:
                 diff = q_embed - prototype
                 dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
-                distances.append(dist)
-            
-            # Find the best threshold for this user.
-            distances = np.array(distances)
+                query_distances.append(dist)
+
+            query_distances = np.array(query_distances)
             labels = query_labels.cpu().numpy()
-            
-            # Simple: the threshold is the average distance between the real and fake samples.
-            threshold = (np.mean(distances[labels==1]) + np.mean(distances[labels==0])) / 2.0
-            
-            predictions = (distances < threshold).astype(int)
+
+            predictions = (query_distances < optimal_threshold).astype(int)
             accuracy = np.mean(predictions == labels)
             total_accuracy += accuracy
 
