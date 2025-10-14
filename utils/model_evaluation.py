@@ -262,7 +262,7 @@ def draw_far_frr(results):
     plt.show()
 
 # utils/model_evaluation.py
-def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, transform, k_shot, device): # Thêm base_data_dir
+def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, k_shot, device): # Thêm base_data_dir
     feature_extractor.eval()
     metric_generator.eval()
 
@@ -273,8 +273,7 @@ def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, ba
         split_name='meta-test', 
         k_shot=k_shot, 
         n_query_genuine=10, 
-        n_query_forgery=10,
-        transform=transform
+        n_query_forgery=10
     )
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
