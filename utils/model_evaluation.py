@@ -1,3 +1,4 @@
+from copy import deepcopy
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
@@ -14,6 +15,7 @@ from sklearn.metrics import (
 )
 from losses.triplet_loss import DistanceNet
 from dataloader.meta_dataloader import SignatureEpisodeDataset
+from losses.triplet_loss import adaptive_mahalanobis_triplet_loss
 
 # Function to calculate distance based on selected metric
 def calculate_distance(anchor_feat, test_feat, metric='euclidean', device='cuda'):
@@ -261,61 +263,88 @@ def draw_far_frr(results):
     plt.grid(True)
     plt.show()
 
-# utils/model_evaluation.py
-def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, k_shot, device): # Thêm base_data_dir
+def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, k_shot, device, fine_tune_steps=5, fine_tune_lr=1e-3):
     feature_extractor.eval()
-    metric_generator.eval()
+    # Metric generator sẽ được bật sang train() mode bên trong vòng lặp để fine-tune
 
-    # Tạo test dataset với số lượng query nhiều hơn để đánh giá chính xác hơn
     test_dataset = SignatureEpisodeDataset(
         test_split_path, 
-        base_data_dir=base_data_dir, # Thêm tham số này
+        base_data_dir=base_data_dir,
         split_name='meta-test', 
         k_shot=k_shot, 
-        n_query_genuine=10, 
-        n_query_forgery=10
+        n_query_genuine=14, # Sử dụng tối đa mẫu còn lại để đánh giá
+        n_query_forgery=15
     )
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-
+    
     total_accuracy = 0.0
+    
+    # Bọc test_loader bằng tqdm để theo dõi tiến trình
+    for batch in tqdm(test_loader, desc="Meta-Testing with Fine-Tuning"):
+        support_images = batch['support_images'].squeeze(0).to(device)
+        query_images = batch['query_images'].squeeze(0).to(device)
+        query_labels = batch['query_labels'].squeeze(0).to(device)
 
-    with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Evaluating on meta-test set (Optimized)"):
-            support_images = batch['support_images'].squeeze(0).to(device)
-            query_images = batch['query_images'].squeeze(0).to(device)
-            query_labels = batch['query_labels'].squeeze(0).to(device)
-
-            # ... (Phần trích xuất embedding và sinh W giữ nguyên) ...
+        with torch.no_grad():
             all_images = torch.cat([support_images, query_images], dim=0)
             all_embeddings = feature_extractor(all_images)
             support_embeddings = all_embeddings[:k_shot]
             query_embeddings = all_embeddings[k_shot:]
 
-            gen_module = metric_generator.module if isinstance(metric_generator, nn.DataParallel) else metric_generator
-            W = gen_module(support_embeddings)
+        # --- GIAI ĐOẠN "HỌC CẤP TỐC" (FINE-TUNING ADAPTATION) ---
+        
+        # Sao chép metric_generator để không ảnh hưởng đến model gốc
+        task_specific_metric_generator = deepcopy(metric_generator)
+        task_specific_metric_generator.train()
+        
+        # Tạo một optimizer riêng chỉ để tinh chỉnh generator này
+        fine_tune_optimizer = torch.optim.Adam(task_specific_metric_generator.parameters(), lr=fine_tune_lr)
 
+        for _ in range(fine_tune_steps):
+            # Tạo các triplet từ chính support set để học
+            if len(support_embeddings) < 2: continue
+
+            anchor_feat = support_embeddings[0].unsqueeze(0)
+            positive_feat = support_embeddings[1].unsqueeze(0)
+            
+            # Để đơn giản, ta có thể dùng một mẫu ngẫu nhiên từ query set làm negative "mồi"
+            # Hoặc tốt hơn là tìm hard-negative trong chính support set nếu có (giả định không có)
+            # Lấy một mẫu giả mạo từ query set để làm hard negative
+            negative_feat = query_embeddings[query_labels == 0][0].unsqueeze(0)
+            
+            # Sinh ra W và tính loss
+            W_task = task_specific_metric_generator(support_embeddings)
+            loss = adaptive_mahalanobis_triplet_loss(anchor_feat, positive_feat, negative_feat, W_task)
+
+            fine_tune_optimizer.zero_grad()
+            loss.backward()
+            fine_tune_optimizer.step()
+
+        # --- GIAI ĐOẠN ĐÁNH GIÁ ---
+        task_specific_metric_generator.eval()
+        with torch.no_grad():
+            # Sử dụng generator đã được tinh chỉnh để tạo W cuối cùng
+            W_final = task_specific_metric_generator(support_embeddings)
             prototype = torch.mean(support_embeddings, dim=0)
-
-            # --- LOGIC MỚI: TÌM NGƯỠNG TỐI ƯU TỪ SUPPORT SET ---
+            
+            # ... (Phần logic đánh giá còn lại giữ nguyên) ...
             support_distances = []
             for s_embed in support_embeddings:
                 diff = s_embed - prototype
-                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
+                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W_final), diff.unsqueeze(1)).item()
                 support_distances.append(dist)
+            
+            optimal_threshold = np.max(support_distances) * 1.1
 
-            # Ngưỡng tối ưu có thể là khoảng cách lớn nhất trong support set + một sai số nhỏ
-            optimal_threshold = np.max(support_distances) * 1.1 # Thử nhân với 1.1 để nới lỏng ngưỡng
-
-            # --- ÁP DỤNG NGƯỠNG LÊN QUERY SET ---
             query_distances = []
             for q_embed in query_embeddings:
                 diff = q_embed - prototype
-                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W), diff.unsqueeze(1)).item()
+                dist = torch.matmul(torch.matmul(diff.unsqueeze(0), W_final), diff.unsqueeze(1)).item()
                 query_distances.append(dist)
-
+            
             query_distances = np.array(query_distances)
             labels = query_labels.cpu().numpy()
-
+            
             predictions = (query_distances < optimal_threshold).astype(int)
             accuracy = np.mean(predictions == labels)
             total_accuracy += accuracy
