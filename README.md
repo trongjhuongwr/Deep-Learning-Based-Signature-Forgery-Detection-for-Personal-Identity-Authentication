@@ -156,7 +156,7 @@ Our Few-Shot Adaptive Metric Learning approach yielded state-of-the-art results,
 ### Datasets Used:
 -   **BCSD**: [Used for training the YOLOv10 model](https://www.kaggle.com/datasets/saifkhichi96/bank-checks-signatures-segmentation-dataset)
 -   **CEDAR**: [Used for meta-training and K-fold validation](https://www.kaggle.com/datasets/shreelakshmigp/cedardataset)
--   **BHSig-260**: [Used for cross-dataset generalization evaluation](https://www.kaggle.com/datasets/robikagran/bhsig260-bengali) (Recommended Version) or [the mixed version](https://www.kaggle.com/datasets/ankita22053139/cedarbhsig-260) (requires restructuring).
+-   **BHSig-260**: [Used for cross-dataset generalization evaluation](https://www.kaggle.com/datasets/nth2165/bhsig260-hindi-bengali) (Recommended Version) or [the mixed version](https://www.kaggle.com/datasets/ankita22053139/cedarbhsig-260) (requires restructuring).
 
 ### Replication Notebooks:
 The complete and reproducible workflow is documented within the `notebooks/` directory of this repository. These notebooks are designed to be run sequentially to achieve the final results.
