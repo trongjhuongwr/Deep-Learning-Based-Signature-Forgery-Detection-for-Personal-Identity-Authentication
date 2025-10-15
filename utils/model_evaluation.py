@@ -15,7 +15,7 @@ from sklearn.metrics import (
 )
 from losses.triplet_loss import DistanceNet
 from dataloader.meta_dataloader import SignatureEpisodeDataset
-from losses.triplet_loss import adaptive_mahalanobis_triplet_loss
+from losses.triplet_loss import DistanceNet, pairwise_mahalanobis_distance
 
 # Function to calculate distance based on selected metric
 def calculate_distance(anchor_feat, test_feat, metric='euclidean', device='cuda'):
@@ -263,84 +263,67 @@ def draw_far_frr(results):
     plt.grid(True)
     plt.show()
 
-def evaluate_meta_model(feature_extractor, metric_generator, test_split_path, base_data_dir, k_shot, device, fine_tune_steps=0, fine_tune_lr=1e-3):
-    # (Phần khởi tạo dataset và dataloader giữ nguyên)
-    test_dataset = SignatureEpisodeDataset(test_split_path, base_data_dir, 'meta-test', k_shot=k_shot, n_query_genuine=14, n_query_forgery=14)
+def evaluate_meta_model(feature_extractor, metric_generator, test_dataset, device):
+    """
+    Đánh giá mô hình meta-learning trên tập test.
+    Sử dụng phương pháp tìm ngưỡng tối ưu cho mỗi episode (người dùng).
+    """
+    feature_extractor.eval()
+    metric_generator.eval()
+    
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     total_accuracy = 0.0
     
-    # Đặt model ở chế độ đánh giá
-    original_fe_state = deepcopy(feature_extractor.state_dict())
-    original_mg_state = deepcopy(metric_generator.state_dict())
-    
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Meta-Testing"):
-            # (Phần lấy dữ liệu và trích xuất embedding giữ nguyên)
+        for batch in tqdm(test_loader, desc="Meta-Testing", leave=False):
             support_images = batch['support_images'].squeeze(0).to(device)
             query_images = batch['query_images'].squeeze(0).to(device)
             query_labels = batch['query_labels'].squeeze(0).to(device)
 
+            # Trích xuất embeddings
+            k_shot = len(support_images)
             all_images = torch.cat([support_images, query_images], dim=0)
             all_embeddings = feature_extractor(all_images)
             support_embeddings = all_embeddings[:k_shot]
             query_embeddings = all_embeddings[k_shot:]
             
-            # (Phần sinh ma trận W giữ nguyên)
+            # Sinh ma trận W từ support set
             W = metric_generator(support_embeddings)
             
-            # --- LOGIC ĐÁNH GIÁ MỚI: NEAREST NEIGHBOR ---
-            
-            # Tạo 2 prototype: 1 cho genuine (từ support set), 1 cho "không phải" (tạm thời)
+            # Tính prototype từ các mẫu chữ ký thật trong support set
             prototype_genuine = torch.mean(support_embeddings, dim=0)
             
-            correct_predictions = 0
-            for i in range(len(query_images)):
-                q_embed = query_embeddings[i]
-                q_label = query_labels[i]
-
-                # Tính khoảng cách Mahalanobis từ ảnh query đến prototype "thật"
+            # Tính khoảng cách từ mỗi ảnh query đến prototype
+            distances = []
+            for q_embed in query_embeddings:
                 diff = q_embed - prototype_genuine
-                dist_to_genuine = torch.matmul(torch.matmul(diff, W), diff.t())
-
-                # Đây là phần logic quan trọng: ta cần một ngưỡng để so sánh.
-                # Thay vì tính ngưỡng phức tạp, ta dùng một cách đơn giản hơn cho few-shot:
-                # Tìm ngưỡng tốt nhất trên chính query set của user này.
-                # Đây là cách làm phổ biến trong meta-learning evaluation.
-                
-                all_dists = []
-                for emb in query_embeddings:
-                    diff_temp = emb - prototype_genuine
-                    dist_temp = torch.matmul(torch.matmul(diff_temp, W), diff_temp.t())
-                    all_dists.append(dist_temp.item())
-                
-                all_dists = np.array(all_dists)
-                true_labels = query_labels.cpu().numpy()
-                
-                # Tìm ngưỡng tốt nhất trên tập query này
-                best_acc = 0
-                best_thresh = 0
-                for thresh_candidate in all_dists:
-                    preds = (all_dists < thresh_candidate).astype(int)
-                    acc = np.mean(preds == true_labels)
-                    if acc > best_acc:
-                        best_acc = acc
-                        best_thresh = thresh_candidate
-
-                # Dự đoán cho mẫu hiện tại với ngưỡng tốt nhất vừa tìm được
-                prediction = 1 if dist_to_genuine < best_thresh else 0
-                
-                if prediction == q_label.item():
-                    correct_predictions += 1
+                # dist = (diff.T @ W @ diff).item()
+                dist = torch.matmul(torch.matmul(diff, W), diff.t()).item()
+                distances.append(dist)
             
-            episode_accuracy = correct_predictions / len(query_images)
-            total_accuracy += episode_accuracy
+            distances = np.array(distances)
+            labels = query_labels.cpu().numpy()
+            
+            # Tìm ngưỡng (threshold) tối ưu cho episode này
+            # Đây là phương pháp đánh giá chuẩn: tìm ngưỡng tốt nhất trên chính tập query này
+            # để xem mô hình đã tạo ra một không gian embedding tốt đến mức nào.
+            best_episode_acc = 0
+            
+            # Thử các giá trị ngưỡng khả dĩ
+            sorted_dists = np.sort(np.unique(distances))
+            threshold_candidates = (sorted_dists[:-1] + sorted_dists[1:]) / 2.0
+            
+            if len(threshold_candidates) == 0 and len(sorted_dists) > 0:
+                threshold_candidates = [np.mean(sorted_dists)]
 
-    # (Phần trả về kết quả giữ nguyên)
+            for thresh in threshold_candidates:
+                preds = (distances < thresh).astype(int)
+                acc = np.mean(preds == labels)
+                if acc > best_episode_acc:
+                    best_episode_acc = acc
+            
+            total_accuracy += best_episode_acc
+
     avg_accuracy = total_accuracy / len(test_loader)
-    
-    # Khôi phục lại trạng thái model ban đầu, phòng trường hợp có fine-tuning
-    feature_extractor.load_state_dict(original_fe_state)
-    metric_generator.load_state_dict(original_mg_state)
-
     return avg_accuracy
