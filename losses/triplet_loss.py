@@ -72,18 +72,28 @@ class TripletLoss(torch.nn.Module):
         return torch.mean(losses)
 
 
-def adaptive_mahalanobis_triplet_loss(anchor_feat, positive_feat, negative_feat, W, margin=0.5):
+def pairwise_mahalanobis_distance(x1, x2, W):
     """
-    Calculate Triplet Loss using adaptive Mahalanobis distance.
-    d(x1, x2) = (x1-x2)^T * W * (x1-x2)
+    Tính ma trận khoảng cách Mahalanobis giữa hai tập tensor (embeddings).
+    x1: Tensor kích thước (N, D) - tập các anchor
+    x2: Tensor kích thước (M, D) - tập các positive hoặc negative
+    W: Ma trận Mahalanobis kích thước (D, D)
+    Returns: Ma trận khoảng cách kích thước (N, M)
     """
-    # Anchor-Positive Distance
-    diff_p = anchor_feat - positive_feat
-    dist_ap = torch.diag(torch.matmul(torch.matmul(diff_p, W), diff_p.t()))
+    diff = x1.unsqueeze(1) - x2.unsqueeze(0)  # Tạo ma trận chênh lệch, kích thước: (N, M, D)
+    
+    # Sử dụng einsum để tính (x1-x2)^T * W * (x1-x2) cho tất cả các cặp
+    # 'ijk,kl,ijl->ij' có nghĩa là: nhân ma trận (N, M, D) với (D, D) và với (N, M, D) để ra (N, M)
+    dist_mat = torch.einsum('ijk,kl,ijl->ij', diff, W, diff)
+    
+    return dist_mat
 
+def adaptive_mahalanobis_triplet_loss(anchor_feat, positive_feat, negative_feat, W, margin=0.5):
+    # Anchor-Positive Distance
+    dist_ap = torch.diag(pairwise_mahalanobis_distance(anchor_feat, positive_feat, W))
+    
     # Anchor-Negative Distance
-    diff_n = anchor_feat - negative_feat
-    dist_an = torch.diag(torch.matmul(torch.matmul(diff_n, W), diff_n.t()))
+    dist_an = torch.diag(pairwise_mahalanobis_distance(anchor_feat, negative_feat, W))
 
     # Calculate Triplet Loss
     losses = F.relu(dist_ap - dist_an + margin)
