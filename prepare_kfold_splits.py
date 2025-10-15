@@ -9,7 +9,7 @@ import re
 # Đường dẫn đến thư mục chứa chữ ký gốc của bộ CEDAR
 # LƯU Ý: Hãy đảm bảo đường dẫn này đúng với môi trường Kaggle của bạn
 BASE_DATA_DIR = '/kaggle/input/cedardataset/signatures'
-OUTPUT_DIR = '/kaggle/working/kfold_splits' # Sẽ lưu các file split vào thư mục working
+OUTPUT_DIR = '/kaggle/working/Deep-Learning-Based-Signature-Forgery-Detection-for-Personal-Identity-Authentication-Update/kfold_splits' # Sẽ lưu các file split vào thư mục working
 NUM_SPLITS = 5
 RANDOM_SEED = 42
 
