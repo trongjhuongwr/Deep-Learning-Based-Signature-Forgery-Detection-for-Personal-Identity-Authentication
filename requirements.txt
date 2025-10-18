@@ -9,3 +9,4 @@ kaggle
 kagglehub
 ipywidgets
 Pillow
+nvidia-ml-py
