@@ -1,4 +1,4 @@
-# Deep-Learning-Based Signature Forgery Detection for Personal Identity Authentication
+# Deep Learning-Based Signature Forgery Detection: A Learnable Distance Approach with YOLOv10, ResNet-34, and Triplet Siamese Similarity Network
 
 ## Introduction
 
