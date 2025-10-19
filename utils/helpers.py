@@ -1,5 +1,3 @@
-# utils/helpers.py
-
 import yaml
 import os
 import json
@@ -80,10 +78,11 @@ class MemoryTracker:
             if device is None:
                 device_index = torch.cuda.current_device()
             elif isinstance(device, torch.device):
-                if device.type != "cuda" or device.index is None:
+                if device.type != "cuda":
                     print(f"MemoryTracker: provided device {device} is not a CUDA device. Disabling memory tracking.")
                     return
-                device_index = device.index
+                # Handle index=None by falling back to current_device
+                device_index = device.index if device.index is not None else torch.cuda.current_device()
             else:
                 # allow passing int-like device index or string convertible to int
                 try:
