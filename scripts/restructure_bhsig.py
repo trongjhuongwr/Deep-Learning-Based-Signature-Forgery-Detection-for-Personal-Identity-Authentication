@@ -1,57 +1,44 @@
 import os
+import re
 import json
 import random
 import argparse
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-def get_bhsig_info_from_path(filepath: str) -> Optional[Tuple[str, int]]:
+def parse_bhsig_filename(filename: str) -> Optional[Tuple[str, int]]:
     """
-    Extracts language code ('B' or 'H') and user ID from BHSig file paths
-    within the nth2165 dataset structure.
-    Example path: .../BHSig260/Bengali/001/B-S-001-G-01.tif
+    Extracts language code ('B' or 'H') and user ID from BHSig-style filenames.
+    Example: 'B-S-001-G-01.tif' -> ('B', 1)  (Handles potential leading zeros)
+             'H-S-042-F-03.tif' -> ('H', 42)
 
     Args:
-        filepath (str): The absolute path to the signature file.
+        filename (str): The input filename.
 
     Returns:
-        Optional[Tuple[str, int]]: ('B' or 'H', user_id) or None if parsing fails.
+        Optional[Tuple[str, int]]: A tuple (language_code, user_id), or None if parsing fails.
     """
-    try:
-        parts = filepath.split(os.sep)
-        filename = parts[-1]
-        user_id_str = parts[-2] # User ID is the parent directory name
-        language_folder = parts[-3] # 'Bengali' or 'Hindi'
-
-        # Extract language code from filename prefix or folder name
-        language_code = None
-        if filename.upper().startswith('B-'):
-            language_code = 'B'
-        elif filename.upper().startswith('H-'):
-            language_code = 'H'
-        elif language_folder.lower() == 'bengali':
-             language_code = 'B'
-        elif language_folder.lower() == 'hindi':
-             language_code = 'H'
-
-        if language_code and user_id_str.isdigit():
-            user_id = int(user_id_str)
-            return language_code, user_id
-    except (IndexError, ValueError):
-        # Handle cases where the path structure is unexpected
-        pass
-    # print(f"Warning: Could not parse language/user ID from path: {filepath}")
-    return None
+    # Regex updated to capture Language (B or H) and User ID (digits) from filename
+    # Allows for variations like -S-, -G-, -F- and leading zeros in user ID
+    match = re.match(r'^([BH])-[SFG]-(\d+)-[GF]-(\d+)\.tif$', filename, re.IGNORECASE)
+    if match:
+        language_code = match.group(1).upper() # 'B' or 'H'
+        user_id = int(match.group(2)) # Convert captured digits to integer
+        return language_code, user_id
+    else:
+        # print(f"Warning: Could not parse BHSig filename format: {filename}")
+        return None
 
 def restructure_nth2165_bhsig(base_dir: str, output_dir: str, num_bengali_test: int = 50, num_hindi_test: int = 30, seed: int = 42):
     """
-    Scans the 'nth2165/bhsig260-hindi-bengali' dataset, separates Bengali and Hindi users,
-    and creates two separate JSON files ('bhsig_bengali_meta_test.json', 'bhsig_hindi_meta_test.json')
+    Scans the 'nth2165/bhsig260-hindi-bengali' dataset based on its specific structure,
+    separates Bengali and Hindi users, and creates two separate JSON files
+    ('bhsig_bengali_meta_test.json', 'bhsig_hindi_meta_test.json')
     containing absolute paths for randomly selected test users.
 
     Args:
-        base_dir (str): Path to the root directory of the 'nth2165/bhsig260-hindi-bengali' dataset
-                        (containing 'Bengali' and 'Hindi' subdirectories).
+        base_dir (str): Path to the root directory of the 'nth2165/bhsig260-hindi-bengali' dataset.
+                        (e.g., '/kaggle/input/bhsig260-hindi-bengali/')
         output_dir (str): Directory where the restructured JSON split files will be saved.
         num_bengali_test (int): Number of Bengali users to include in the Bengali test split. Defaults to 50.
         num_hindi_test (int): Number of Hindi users to include in the Hindi test split. Defaults to 30.
@@ -59,48 +46,51 @@ def restructure_nth2165_bhsig(base_dir: str, output_dir: str, num_bengali_test: 
     """
     print("--- Starting BHSig-260 (nth2165) Dataset Restructuring ---")
 
-    bengali_dir = os.path.join(base_dir, 'Bengali')
-    hindi_dir = os.path.join(base_dir, 'Hindi')
+    # --- Define Source Directories based on the CORRECTED structure ---
+    source_dirs = {
+        'hindi_genuine': os.path.join(base_dir, 'BHSig160_Hindi', 'Genuine'),
+        'hindi_forged': os.path.join(base_dir, 'BHSig160_Hindi', 'Forged'),
+        'bengali_genuine': os.path.join(base_dir, 'BHSig100_Bengali', 'Genuine'),
+        'bengali_forged': os.path.join(base_dir, 'BHSig100_Bengali', 'Forged')
+    }
 
     # --- 1. Validate Input Directories ---
-    if not os.path.isdir(bengali_dir):
-        print(f"ERROR: Bengali directory not found: {bengali_dir}")
-        return
-    if not os.path.isdir(hindi_dir):
-        print(f"ERROR: Hindi directory not found: {hindi_dir}")
-        return
+    all_dirs_exist = True
+    for key, directory in source_dirs.items():
+        if not os.path.isdir(directory):
+            print(f"ERROR: Directory not found: {directory}. Please check the 'base_dir' path.")
+            all_dirs_exist = False
+    if not all_dirs_exist:
+        return # Stop if essential directories are missing
 
     # --- 2. Collect All Files Grouped by Unique User ID ('B-1', 'H-42', etc.) ---
     all_files: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: {'genuine': [], 'forgery': []})
     processed_files_count = 0
     skipped_files_count = 0
-    supported_extensions = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+    supported_extensions = ('.tif', '.tiff') # Dataset uses .tif
 
-    print("Scanning Bengali and Hindi directories...")
-    for lang_dir in [bengali_dir, hindi_dir]:
-        print(f"  Processing directory: {lang_dir}")
-        for user_id_folder in os.listdir(lang_dir):
-            user_dir_path = os.path.join(lang_dir, user_id_folder)
-            if os.path.isdir(user_dir_path) and user_id_folder.isdigit():
-                user_id = int(user_id_folder)
-                lang_code = 'B' if 'Bengali' in lang_dir else 'H'
-                unique_user_id = f"{lang_code}-{user_id}"
+    print("Scanning source directories...")
+    for key, directory in source_dirs.items():
+        print(f"  Processing: {directory}")
+        for filename in os.listdir(directory):
+            if filename.lower().endswith(supported_extensions):
+                parsed_info = parse_bhsig_filename(filename)
+                if parsed_info:
+                    lang, user_id = parsed_info
+                    # Create unique ID (e.g., 'B-1', 'H-11') consistent across genuine/forged
+                    unique_user_id = f"{lang}-{user_id}"
+                    full_path = os.path.join(directory, filename)
 
-                for filename in os.listdir(user_dir_path):
-                    if filename.lower().endswith(supported_extensions):
-                        full_path = os.path.join(user_dir_path, filename)
-                        # Determine genuine/forged based on filename convention (B-S- or B-F-)
-                        if filename.upper().startswith(f'{lang_code}-S-'):
-                            all_files[unique_user_id]['genuine'].append(full_path)
-                        elif filename.upper().startswith(f'{lang_code}-F-'):
-                            all_files[unique_user_id]['forgery'].append(full_path)
-                        else:
-                            # print(f"    Skipping file with unclear type: {filename}")
-                            skipped_files_count += 1
-                            continue # Skip files not matching S/F pattern
-                        processed_files_count += 1
-                    else:
-                        skipped_files_count += 1 # Skip non-image files
+                    # Add file path to the correct category (genuine/forgery)
+                    if 'genuine' in key:
+                        all_files[unique_user_id]['genuine'].append(full_path)
+                    elif 'forged' in key:
+                        all_files[unique_user_id]['forgery'].append(full_path)
+                    processed_files_count += 1
+                else:
+                    skipped_files_count += 1 # Skip files with unparsable names
+            else:
+                 skipped_files_count += 1 # Skip non-image files
 
     if not all_files:
          print("ERROR: No valid BHSig files found or parsed. Cannot create splits.")
@@ -147,7 +137,6 @@ def restructure_nth2165_bhsig(base_dir: str, output_dir: str, num_bengali_test: 
     else:
         print("  No Bengali users selected, skipping Bengali split file generation.")
 
-
     # Save Hindi Split
     if test_hindi_ids:
         hindi_meta_test_data = {uid: all_files[uid] for uid in test_hindi_ids}
@@ -168,9 +157,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Restructure the 'nth2165/bhsig260-hindi-bengali' dataset "
                                                  "into separate Bengali and Hindi meta-test JSON files.")
     parser.add_argument('--base_dir', type=str, required=True,
-                        help="Path to the root directory of the 'nth2165/bhsig260-hindi-bengali' dataset.")
+                        help="Path to the root directory of the 'nth2165/bhsig260-hindi-bengali' dataset "
+                             "(e.g., /kaggle/input/bhsig260-hindi-bengali).")
     parser.add_argument('--output_dir', type=str, required=True,
-                        help="Directory to save the output JSON split files.")
+                        help="Directory to save the output JSON split files (e.g., /kaggle/working/).")
     parser.add_argument('--num_bengali', type=int, default=50,
                         help="Number of Bengali users for the Bengali 'meta-test' split.")
     parser.add_argument('--num_hindi', type=int, default=30,
