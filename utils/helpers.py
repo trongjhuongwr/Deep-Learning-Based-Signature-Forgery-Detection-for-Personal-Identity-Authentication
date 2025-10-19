@@ -56,44 +56,71 @@ def get_model_from_Kaggle(kaggle_handle):
 
 class MemoryTracker:
     """
-    A simple utility class to track GPU memory usage using pynvml.
+    Robust GPU memory tracker using pynvml.
 
-    Attributes:
-        device (torch.device): The GPU device to monitor.
-        handle: Handle to the GPU obtained from pynvml.
-        initial_used_mem (int): GPU memory used (in bytes) when the tracker was initialized.
+    Usage:
+        mt = MemoryTracker()               # use current cuda device if available
+        mt = MemoryTracker(0)              # use cuda:0
+        mt = MemoryTracker(torch.device('cuda:0'))
+        mt = MemoryTracker(torch.device('cpu'))  # will be disabled safely
     """
-    def __init__(self, device):
-        """
-        Initializes the MemoryTracker for a specific GPU device.
+    def __init__(self, device=None):
+        self.handle = None
+        self.initial_used_mem = 0
+        self.nvml_initialized = False
 
-        Args:
-            device (torch.device or int): The GPU device (e.g., torch.device('cuda:0') or 0).
-        """
+        # quick check for CUDA availability
         if not torch.cuda.is_available():
             print("Warning: CUDA not available. MemoryTracker will not function.")
-            self.handle = None
-            self.initial_used_mem = 0
             return
 
+        # normalize device_index
+        device_index = None
         try:
-            pynvml.nvmlInit()
-            device_index = device.index if isinstance(device, torch.device) else device
-            self.handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
-            info = pynvml.nvmlDeviceGetMemoryInfo(self.handle)
-            self.initial_used_mem = info.used
-            print(f"MemoryTracker initialized for device {device_index}. Initial used memory: {self.initial_used_mem / (1024**2):.2f} MB")
-        except pynvml.NVMLError as error:
-            print(f"Failed to initialize NVML: {error}. Memory tracking disabled.")
-            self.handle = None
-            self.initial_used_mem = 0
+            if device is None:
+                device_index = torch.cuda.current_device()
+            elif isinstance(device, torch.device):
+                if device.type != "cuda" or device.index is None:
+                    print(f"MemoryTracker: provided device {device} is not a CUDA device. Disabling memory tracking.")
+                    return
+                device_index = device.index
+            else:
+                # allow passing int-like device index or string convertible to int
+                try:
+                    device_index = int(device)
+                except Exception:
+                    print(f"MemoryTracker: could not interpret device={device!r} as an integer index. Disabling memory tracking.")
+                    return
+
+            # validate index range
+            if device_index < 0 or device_index >= torch.cuda.device_count():
+                print(f"MemoryTracker: device index {device_index} out of range (0..{torch.cuda.device_count()-1}). Disabling memory tracking.")
+                return
+
+            # init NVML and get handle
+            try:
+                pynvml.nvmlInit()
+                self.nvml_initialized = True
+                self.handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
+                info = pynvml.nvmlDeviceGetMemoryInfo(self.handle)
+                self.initial_used_mem = info.used
+                print(f"MemoryTracker initialized for device cuda:{device_index}. Initial used memory: {self.initial_used_mem / (1024**2):.2f} MB")
+            except pynvml.NVMLError as error:
+                print(f"Failed to initialize NVML: {error}. Memory tracking disabled.")
+                self.handle = None
+                self.initial_used_mem = 0
+            except Exception as e:
+                print(f"An unexpected error occurred during MemoryTracker initialization: {e}. Memory tracking disabled.")
+                self.handle = None
+                self.initial_used_mem = 0
+
         except Exception as e:
-            print(f"An unexpected error occurred during MemoryTracker initialization: {e}. Memory tracking disabled.")
+            # Catch anything unexpected during normalization
+            print(f"MemoryTracker initialization error: {e}. Memory tracking disabled.")
             self.handle = None
             self.initial_used_mem = 0
 
     def get_used_memory_bytes(self):
-        """Returns the currently used GPU memory in bytes."""
         if self.handle:
             try:
                 info = pynvml.nvmlDeviceGetMemoryInfo(self.handle)
@@ -104,20 +131,20 @@ class MemoryTracker:
         return 0
 
     def get_used_memory_mb(self):
-        """Returns the currently used GPU memory in megabytes."""
         return self.get_used_memory_bytes() / (1024**2)
 
     def get_memory_usage_since_init_mb(self):
-        """Returns the GPU memory usage increase (in MB) since initialization."""
         current_used = self.get_used_memory_bytes()
         return (current_used - self.initial_used_mem) / (1024**2)
 
-    def __del__(self):
-        """Ensures NVML is shut down when the object is destroyed."""
-        if self.handle:
+    def shutdown(self):
+        if self.nvml_initialized:
             try:
                 pynvml.nvmlShutdown()
-            except pynvml.NVMLError as error:
-                # Can sometimes happen if shutdown multiple times, usually safe to ignore
-                # print(f"NVML Shutdown error: {error}")
+            except pynvml.NVMLError:
                 pass
+            self.nvml_initialized = False
+
+    def __del__(self):
+        # prefer explicit shutdown, but fallback on delete
+        self.shutdown()
