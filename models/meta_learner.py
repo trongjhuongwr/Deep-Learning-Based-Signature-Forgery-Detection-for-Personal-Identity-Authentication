@@ -42,148 +42,133 @@ class MetricGenerator(nn.Module):
         print(f"Initialized MetricGenerator with Attention. Embedding dim: {embedding_dim}, Hidden dim: {hidden_dim}, Dropout: {dropout_prob}.")
 
 
-    # def forward(self, support_embeddings):
-    #     """
-    #     Generates the Mahalanobis matrix W for a given support set.
-
-    #     Args:
-    #         support_embeddings (torch.Tensor): Embeddings of the support set samples.
-    #                                             Shape: (k_shot, embedding_dim).
-
-    #     Returns:
-    #         torch.Tensor: The generated Mahalanobis matrix W, ensured to be
-    #                       symmetric and positive semi-definite (PSD).
-    #                       Shape: (embedding_dim, embedding_dim).
-    #     """
-    #     # Ensure support_embeddings is not empty
-    #     k_shot = support_embeddings.shape[0]
-    #     if k_shot == 0:
-    #         print("Warning: MetricGenerator received empty support_embeddings. Returning Identity matrix.")
-    #         # Return identity matrix on the same device
-    #         return torch.eye(self.embedding_dim, device=support_embeddings.device)
-
-    #     # --- 1. Compute Weighted Prototype via Attention ---
-    #     # Calculate attention scores for each support sample
-    #     # (k_shot, embedding_dim) -> (k_shot, 1)
-    #     try:
-    #          attn_scores = self.attn(support_embeddings)
-    #     except Exception as e:
-    #          print(f"Error during attention score calculation: {e}. Using mean prototype fallback.")
-    #          # Fallback to simple mean if attention fails
-    #          prototype = torch.mean(support_embeddings, dim=0, keepdim=True)
-    #          # Proceed to matrix generation with mean prototype
-    #          # (Code block duplicated below for clarity, could be refactored)
-    #          try:
-    #              flat_matrix = self.generator(prototype)
-    #              W_raw = flat_matrix.view(self.embedding_dim, self.embedding_dim)
-    #              W_sym = (W_raw + W_raw.t()) / 2
-    #              epsilon = 1e-6
-    #              W_psd = W_sym + (epsilon * torch.eye(self.embedding_dim, device=W_sym.device))
-    #              return W_psd
-    #          except Exception as gen_e:
-    #              print(f"Error during generator forward pass after fallback: {gen_e}")
-    #              return torch.eye(self.embedding_dim, device=support_embeddings.device) # Final fallback
-
-    #     # Apply softmax to get normalized attention weights (sum to 1)
-    #     attn_weights = F.softmax(attn_scores, dim=0) # Shape: (k_shot, 1)
-
-    #     # Compute the weighted average prototype
-    #     # Element-wise multiply embeddings by weights: (k_shot, embedding_dim) * (k_shot, 1)
-    #     # Sum across the k_shot dimension: -> (1, embedding_dim)
-    #     prototype = torch.sum(support_embeddings * attn_weights, dim=0, keepdim=True)
-
-    #     # === DEBUG PRINT 1 === (Optional: Add if needed)
-    #     # print(f"DEBUG (MetricGenerator): Prototype shape: {prototype.shape}") # Should be [1, 512]
-
-
-    #     # --- 2. Generate Flattened Matrix ---
-    #     # Pass the calculated prototype through the generator network
-    #     try:
-    #          flat_matrix = self.generator(prototype) # Shape: (1, embedding_dim * embedding_dim)
-    #     except Exception as e:
-    #          print(f"Error during generator forward pass: {e}")
-    #          # Fallback to Identity if generator fails
-    #          return torch.eye(self.embedding_dim, device=support_embeddings.device)
-
-    #     # === DEBUG PRINT 2 === (Optional: Add if needed)
-    #     # print(f"DEBUG (MetricGenerator): flat_matrix shape (output of self.generator): {flat_matrix.shape}") # Should be [1, 512*512]
-
-
-    #     # --- 3. Reshape into Square Matrix ---
-    #     try:
-    #          # === DEBUG PRINT 3 === (Optional: Add if needed)
-    #          # print(f"DEBUG (MetricGenerator): Reshaping flat_matrix ({flat_matrix.shape}) to ({self.embedding_dim}, {self.embedding_dim})")
-    #          W_raw = flat_matrix.view(self.embedding_dim, self.embedding_dim)
-    #          # === DEBUG PRINT 4 === (Optional: Add if needed)
-    #          # print(f"DEBUG (MetricGenerator): W_raw shape after view: {W_raw.shape}") # Should be [512, 512]
-    #     except Exception as e:
-    #          print(f"DEBUG (MetricGenerator): ERROR during flat_matrix.view: {e}")
-    #          # Fallback if reshape fails
-    #          return torch.eye(self.embedding_dim, device=support_embeddings.device)
-
-
-    #     # --- 4. Ensure W is Symmetric and Positive Semi-Definite (PSD) ---
-    #     # Enforce Symmetry: W_sym = (W_raw + W_raw^T) / 2
-    #     W_sym = (W_raw + W_raw.t()) / 2
-
-    #     # Enforce Positive Semi-Definite (PSD) by adding a small diagonal bias (epsilon * I)
-    #     # This is a numerically stable method to ensure eigenvalues > 0.
-    #     epsilon = 1e-6
-    #     W_psd = W_sym + (epsilon * torch.eye(self.embedding_dim, device=W_sym.device))
-
-    #     # === DEBUG PRINT 5 === (Optional: Add if needed)
-    #     # print(f"DEBUG (MetricGenerator): Final W_psd shape: {W_psd.shape}") # Should be [512, 512]
-
-    #     return W_psd
-
     def forward(self, support_embeddings):
+        """
+        Generates the Mahalanobis matrix W for a given support set.
+
+        Args:
+            support_embeddings (torch.Tensor): Embeddings of the support set samples.
+                                                Shape: (k_shot, embedding_dim).
+
+        Returns:
+            torch.Tensor: The generated Mahalanobis matrix W, ensured to be
+                          symmetric and positive semi-definite (PSD).
+                          Shape: (embedding_dim, embedding_dim).
+        """
+        # Ensure support_embeddings is not empty
         k_shot = support_embeddings.shape[0]
         if k_shot == 0:
-            # print("DEBUG (MetricGenerator): Empty support set...") # Bỏ comment nếu cần
+            print("Warning: MetricGenerator received empty support_embeddings. Returning Identity matrix.")
+            # Return identity matrix on the same device
             return torch.eye(self.embedding_dim, device=support_embeddings.device)
 
         # --- 1. Compute Weighted Prototype via Attention ---
+        # Calculate attention scores for each support sample
+        # (k_shot, embedding_dim) -> (k_shot, 1)
         try:
              attn_scores = self.attn(support_embeddings)
-             attn_weights = F.softmax(attn_scores, dim=0)
-             prototype = torch.sum(support_embeddings * attn_weights, dim=0, keepdim=True)
-             # === DEBUG PRINT 1 ===
-             print(f"\nDEBUG INSIDE MetricGenerator.forward:")
-             print(f"  Input support_embeddings shape: {support_embeddings.shape}") # Should be [k, 512]
-             print(f"  Calculated prototype shape: {prototype.shape}") # Should be [1, 512]
         except Exception as e:
-             print(f"DEBUG (MetricGenerator): Error during prototype calculation: {e}. Using mean fallback.")
+             print(f"Error during attention score calculation: {e}. Using mean prototype fallback.")
+             # Fallback to simple mean if attention fails
              prototype = torch.mean(support_embeddings, dim=0, keepdim=True)
-             print(f"  Fallback prototype shape: {prototype.shape}") # Should be [1, 512]
+             # Proceed to matrix generation with mean prototype
+             # (Code block duplicated below for clarity, could be refactored)
+             try:
+                 flat_matrix = self.generator(prototype)
+                 W_raw = flat_matrix.view(self.embedding_dim, self.embedding_dim)
+                 W_sym = (W_raw + W_raw.t()) / 2
+                 epsilon = 1e-6
+                 W_psd = W_sym + (epsilon * torch.eye(self.embedding_dim, device=W_sym.device))
+                 return W_psd
+             except Exception as gen_e:
+                 print(f"Error during generator forward pass after fallback: {gen_e}")
+                 return torch.eye(self.embedding_dim, device=support_embeddings.device) # Final fallback
 
+        # Apply softmax to get normalized attention weights (sum to 1)
+        attn_weights = F.softmax(attn_scores, dim=0) # Shape: (k_shot, 1)
+
+        # Compute the weighted average prototype
+        # Element-wise multiply embeddings by weights: (k_shot, embedding_dim) * (k_shot, 1)
+        # Sum across the k_shot dimension: -> (1, embedding_dim)
+        prototype = torch.sum(support_embeddings * attn_weights, dim=0, keepdim=True)
 
         # --- 2. Generate Flattened Matrix ---
+        # Pass the calculated prototype through the generator network
         try:
-             flat_matrix = self.generator(prototype)
-             # === DEBUG PRINT 2 ===
-             print(f"  flat_matrix shape (output of self.generator): {flat_matrix.shape}") # SHOULD BE [1, 512*512 = 262144]
+             flat_matrix = self.generator(prototype) # Shape: (1, embedding_dim * embedding_dim)
         except Exception as e:
-             print(f"DEBUG (MetricGenerator): Error during self.generator: {e}")
+             print(f"Error during generator forward pass: {e}")
+             # Fallback to Identity if generator fails
              return torch.eye(self.embedding_dim, device=support_embeddings.device)
-
 
         # --- 3. Reshape into Square Matrix ---
         try:
-             # === DEBUG PRINT 3 ===
-             print(f"  Attempting reshape: flat_matrix ({flat_matrix.shape}) -> ({self.embedding_dim}, {self.embedding_dim})")
              W_raw = flat_matrix.view(self.embedding_dim, self.embedding_dim)
-             # === DEBUG PRINT 4 ===
-             print(f"  W_raw shape after view: {W_raw.shape}") # SHOULD BE [512, 512]
         except Exception as e:
              print(f"DEBUG (MetricGenerator): ERROR during flat_matrix.view: {e}")
+             # Fallback if reshape fails
              return torch.eye(self.embedding_dim, device=support_embeddings.device)
 
 
         # --- 4. Ensure W is Symmetric and Positive Semi-Definite (PSD) ---
+        # Enforce Symmetry: W_sym = (W_raw + W_raw^T) / 2
         W_sym = (W_raw + W_raw.t()) / 2
+
+        # Enforce Positive Semi-Definite (PSD) by adding a small diagonal bias (epsilon * I)
+        # This is a numerically stable method to ensure eigenvalues > 0.
         epsilon = 1e-6
         W_psd = W_sym + (epsilon * torch.eye(self.embedding_dim, device=W_sym.device))
-        # === DEBUG PRINT 5 ===
-        print(f"  Final W_psd shape: {W_psd.shape}") # SHOULD BE [512, 512]
 
         return W_psd
+
+    # def forward(self, support_embeddings):
+    #     k_shot = support_embeddings.shape[0]
+    #     if k_shot == 0:
+    #         # print("DEBUG (MetricGenerator): Empty support set...") # Bỏ comment nếu cần
+    #         return torch.eye(self.embedding_dim, device=support_embeddings.device)
+
+    #     # --- 1. Compute Weighted Prototype via Attention ---
+    #     try:
+    #          attn_scores = self.attn(support_embeddings)
+    #          attn_weights = F.softmax(attn_scores, dim=0)
+    #          prototype = torch.sum(support_embeddings * attn_weights, dim=0, keepdim=True)
+    #          # === DEBUG PRINT 1 ===
+    #          print(f"\nDEBUG INSIDE MetricGenerator.forward:")
+    #          print(f"  Input support_embeddings shape: {support_embeddings.shape}") # Should be [k, 512]
+    #          print(f"  Calculated prototype shape: {prototype.shape}") # Should be [1, 512]
+    #     except Exception as e:
+    #          print(f"DEBUG (MetricGenerator): Error during prototype calculation: {e}. Using mean fallback.")
+    #          prototype = torch.mean(support_embeddings, dim=0, keepdim=True)
+    #          print(f"  Fallback prototype shape: {prototype.shape}") # Should be [1, 512]
+
+
+    #     # --- 2. Generate Flattened Matrix ---
+    #     try:
+    #          flat_matrix = self.generator(prototype)
+    #          # === DEBUG PRINT 2 ===
+    #          print(f"  flat_matrix shape (output of self.generator): {flat_matrix.shape}") # SHOULD BE [1, 512*512 = 262144]
+    #     except Exception as e:
+    #          print(f"DEBUG (MetricGenerator): Error during self.generator: {e}")
+    #          return torch.eye(self.embedding_dim, device=support_embeddings.device)
+
+
+    #     # --- 3. Reshape into Square Matrix ---
+    #     try:
+    #          # === DEBUG PRINT 3 ===
+    #          print(f"  Attempting reshape: flat_matrix ({flat_matrix.shape}) -> ({self.embedding_dim}, {self.embedding_dim})")
+    #          W_raw = flat_matrix.view(self.embedding_dim, self.embedding_dim)
+    #          # === DEBUG PRINT 4 ===
+    #          print(f"  W_raw shape after view: {W_raw.shape}") # SHOULD BE [512, 512]
+    #     except Exception as e:
+    #          print(f"DEBUG (MetricGenerator): ERROR during flat_matrix.view: {e}")
+    #          return torch.eye(self.embedding_dim, device=support_embeddings.device)
+
+
+    #     # --- 4. Ensure W is Symmetric and Positive Semi-Definite (PSD) ---
+    #     W_sym = (W_raw + W_raw.t()) / 2
+    #     epsilon = 1e-6
+    #     W_psd = W_sym + (epsilon * torch.eye(self.embedding_dim, device=W_sym.device))
+    #     # === DEBUG PRINT 5 ===
+    #     print(f"  Final W_psd shape: {W_psd.shape}") # SHOULD BE [512, 512]
+
+    #     return W_psd
