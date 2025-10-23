@@ -8,7 +8,7 @@ model:
   kaggle_handle: giahuytranviet/tSSN-verification-model/pyTorch/default/3
   
 training:
-  batch_size: 32               # Number of images in each batch
+  batch_size: 64               # Number of images in each batch
   learning_rate: 0.001         # Optimizer learning rate
   early_stop: 15
   optimizer: adam              # Optimizer usage
