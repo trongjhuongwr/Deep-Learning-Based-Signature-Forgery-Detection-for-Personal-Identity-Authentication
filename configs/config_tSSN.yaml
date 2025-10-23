@@ -9,10 +9,10 @@ model:
   
 training:
   batch_size: 64               # Number of images in each batch
-  learning_rate: 0.001         # Optimizer learning rate
+  learning_rate: 1e-4         # Optimizer learning rate
   early_stop: 15
   optimizer: adam              # Optimizer usage
-  num_epochs: 100              # Number of train epochs
+  num_epochs: 50              # Number of train epochs
   margin: 0.6                  # Margin cho triplet loss (threshold)
   scheduler: cosine            # Add scheduler to gradually reduce learning rate
 
