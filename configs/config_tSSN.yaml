@@ -10,7 +10,7 @@ model:
 training:
   batch_size: 64               # Number of images in each batch
   learning_rate: 1e-4         # Optimizer learning rate
-  early_stop: 15
+  early_stop: 3
   optimizer: adam              # Optimizer usage
   num_epochs: 50              # Number of train epochs
   margin: 0.6                  # Margin cho triplet loss (threshold)
