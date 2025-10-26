@@ -45,10 +45,11 @@ Experimental results demonstrate the state-of-the-art performance and robustness
 │   └── meta_learner.py                       # The MetricGenerator module (CORE - Adaptive Metric Learner)
 │
 ├── notebooks/
-│   ├── pretraining.ipynb              # Step 1: Notebook for pre-training the feature extractor
-│   ├── meta_training_kfold.ipynb      # Step 2: Main notebook for K-fold CV meta-learning on CEDAR
-│   ├── cross_dataset_evaluation.ipynb # Step 3: Notebook for cross-dataset evaluation on BHSig-260
-│   └── yolov10_bcsd_trainning.ipynb   # Optional: Notebook for training the YOLOv10 localizer
+│   ├── baseline_metric_selection.ipynb   # Step 0: Notebook for select the best fixed metric to use in pretraining
+│   ├── pretraining.ipynb                 # Step 1: Notebook for pre-training the feature extractor
+│   ├── meta_training_kfold.ipynb         # Step 2: Main notebook for K-fold CV meta-learning on CEDAR
+│   ├── cross_dataset_evaluation.ipynb    # Step 3: Notebook for cross-dataset evaluation on BHSig-260
+│   └── yolov10_bcsd_trainning.ipynb      # Optional: Notebook for training the YOLOv10 localizer
 │
 ├── scripts/
 │   ├── __init__.py
