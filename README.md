@@ -135,6 +135,20 @@ To replicate the state-of-the-art results, follow these steps sequentially. A GP
 
 ---
 
+## Pre-trained Models
+
+To facilitate reproducibility and evaluation, the pre-trained weights for the main components of the model are provided below.
+
+You can download them and place them in the `checkpoints/` folder (or the corresponding folder defined in the code) to run evaluation notebooks (e.g., `cross_dataset_evaluation.ipynb`) without having to retrain from scratch.
+
+| Model | Weight File (Example) | Download Link |
+| :--- | :--- | :--- |
+| **YOLOv10** (Signature Detection) | `yolov10n_best.pt` | **[Download here]()** |
+| **ResNet-34** (Pre-training) | `pretrained_feature_extractor.pth` | **[Download here](https://www.kaggle.com/datasets/nth2165/my-pretrained-weights)** |
+| **Meta-Model** (Final model) | `best_model_fold_5` | **[Download here](https://www.kaggle.com/datasets/nth2165/best-cedar-model-weights)** |
+
+---
+
 ## Results
 
 Our Few-Shot Adaptive Metric Learning framework demonstrated state-of-the-art performance and exceptional generalization capabilities, successfully addressing the limitations identified in earlier approaches.
