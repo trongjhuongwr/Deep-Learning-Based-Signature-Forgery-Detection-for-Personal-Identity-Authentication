@@ -49,7 +49,7 @@ Experimental results demonstrate the state-of-the-art performance and robustness
 │   ├── pretraining.ipynb                 # Step 1: Notebook for pre-training the feature extractor
 │   ├── meta_training_kfold.ipynb         # Step 2: Main notebook for K-fold CV meta-learning on CEDAR
 │   ├── cross_dataset_evaluation.ipynb    # Step 3: Notebook for cross-dataset evaluation on BHSig-260
-│   └── yolov10_bcsd_trainning.ipynb      # Optional: Notebook for training the YOLOv10 localizer
+│   └── yolov10_bcsd_training.ipynb      # Optional: Notebook for training the YOLOv10 localizer
 │
 ├── scripts/
 │   ├── __init__.py
@@ -112,7 +112,7 @@ To replicate the state-of-the-art results, follow these steps sequentially. A GP
 -   Download the required datasets and place them in accessible paths (e.g., Kaggle input directory).
     -   **CEDAR Dataset**: Used for pre-training and meta-training/validation.
     -   **BHSig-260 (Hindi & Bengali)**: The `nth2165/bhsig260-hindi-bengali` version is recommended. Used for cross-dataset evaluation.
--   **(Optional)** Use the `notebooks/yolov10_bcsd_trainning.ipynb` notebook to train a YOLOv10 model if you need to perform signature localization on raw documents. The subsequent steps assume pre-cropped signature images are available as per the CEDAR and BHSig-260 dataset structures.
+-   **(Optional)** Use the `notebooks/yolov10_bcsd_training.ipynb` notebook to train a YOLOv10 model if you need to perform signature localization on raw documents. The subsequent steps assume pre-cropped signature images are available as per the CEDAR and BHSig-260 dataset structures.
 
 **Step 1: Pre-train the Feature Extractor**
 -   **Purpose**: To initialize the ResNet-34 feature extractor with relevant signature features learned via a simple triplet loss task.

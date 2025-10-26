@@ -10,3 +10,5 @@ kagglehub
 ipywidgets
 Pillow
 nvidia-ml-py
+ultralytics
+pynvml
