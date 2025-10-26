@@ -144,8 +144,8 @@ You can download them and place them in the `checkpoints/` folder (or the corres
 | Model | Weight File (Example) | Download Link |
 | :--- | :--- | :--- |
 | **YOLOv10** (Signature Detection) | `yolov10n_best.pt` | **[Download here]()** |
-| **ResNet-34** (Pre-training) | `pretrained_feature_extractor.pth` | **[Download here](https://www.kaggle.com/datasets/nth2165/my-pretrained-weights)** |
-| **Meta-Model** (Final model) | `best_model_fold_5` | **[Download here](https://www.kaggle.com/datasets/nth2165/best-cedar-model-weights)** |
+| **ResNet-34** (Pre-training) | `my-pretrained-weights` | **[Download here](https://www.kaggle.com/datasets/nth2165/my-pretrained-weights)** |
+| **Meta-Model** (Final model) | `best-cedar-model-weights` | **[Download here](https://www.kaggle.com/datasets/nth2165/best-cedar-model-weights)** |
 
 ---
 
